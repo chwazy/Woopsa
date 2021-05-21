@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace Woopsa
 {
@@ -112,19 +113,17 @@ namespace Woopsa
         {
             if (_threadNotifications == null)
             {
-                _threadNotifications = new Thread(new ThreadStart(executeServiceNotifications));
-                _threadNotifications.Name = "WoopsaClientSubscriptionChannelNotifications";
+                _threadNotifications = new Task(executeServiceNotifications);
                 _threadNotifications.Start();
             }
             if (_threadSubscriptions == null)
             {
-                _threadSubscriptions = new Thread(new ThreadStart(executeServiceSubscriptions));
-                _threadSubscriptions.Name = "WoopsaClientSubscriptionChannelSubscriptions";
+                _threadSubscriptions = new Task(executeServiceSubscriptions);
                 _threadSubscriptions.Start();
             }
         }
 
-        private void executeServiceNotifications()
+        private async void executeServiceNotifications()
         {
             _currentChannel = this;
             while (!_terminated)
@@ -140,7 +139,7 @@ namespace Woopsa
                         if (hasSubscriptions)
                             ProcessNotifications();
                         else
-                            Thread.Sleep(TimeSpan.FromMilliseconds(1));
+                            await Task.Delay(TimeSpan.FromMilliseconds(1));
                     }
                 }
                 catch (WoopsaInvalidSubscriptionChannelException)
@@ -153,7 +152,7 @@ namespace Woopsa
                     {
                         // There was some sort of network error. We will
                         // try again later
-                        Thread.Sleep(ReconnectionInterval);
+                        await Task.Delay(ReconnectionInterval);
                     }
                     else
                     { // Cancelled WebRequest, ignore
@@ -167,7 +166,7 @@ namespace Woopsa
                 }
         }
 
-        private void executeServiceSubscriptions()
+        private async void executeServiceSubscriptions()
         {
             _currentChannel = this;
             while (!_terminated)
@@ -184,7 +183,7 @@ namespace Woopsa
                 }
                 // do not manage too quickly the subscriptions update to improve 
                 // grouping of subscriptions into a single multirequest
-                Thread.Sleep(WoopsaSubscriptionServiceConst.ClientSubscriptionUpdateInterval);
+                await Task.Delay(WoopsaSubscriptionServiceConst.ClientSubscriptionUpdateInterval);
             }
         }
 
@@ -367,7 +366,7 @@ namespace Woopsa
                 var notificationSubscriptionId = notification["SubscriptionId"];
                 var notificationId = notification["Id"];
                 WoopsaValueType type = (WoopsaValueType)Enum.Parse(typeof(WoopsaValueType), notificationValue["Type"]);
-                WoopsaValue value = WoopsaValue.CreateChecked(notificationValue["Value"], 
+                WoopsaValue value = WoopsaValue.CreateChecked(notificationValue["Value"],
                     type, DateTime.Parse(notificationValue["TimeStamp"].AsText, CultureInfo.InvariantCulture));
                 WoopsaClientNotification newNotification = new WoopsaClientNotification(value, notificationSubscriptionId);
                 newNotification.Id = notificationId;
@@ -414,13 +413,11 @@ namespace Woopsa
                 CloseChannel();
                 if (_threadSubscriptions != null)
                 {
-                    _threadSubscriptions.Join();
-                    _threadSubscriptions = null;
+                    _threadSubscriptions.Dispose();
                 }
                 if (_threadNotifications != null)
                 {
-                    _threadNotifications.Join();
-                    _threadNotifications = null;
+                    _threadNotifications.Dispose();
                 }
             }
         }
@@ -676,13 +673,13 @@ namespace Woopsa
         {
             get
             {
-                lock(_subscriptionLock)
+                lock (_subscriptionLock)
                 {
                     return _registeredSubscriptions.Count;
                 }
             }
         }
-        private Thread _threadNotifications, _threadSubscriptions;
+        private Task _threadNotifications, _threadSubscriptions;
         private bool _terminated;
 
         private object _channelLock;
@@ -744,7 +741,7 @@ namespace Woopsa
         public bool IsSubscribed => SubscriptionId != null && !UnsubscriptionRequested;
 
         public TimeSpan MonitorInterval { get; }
-        public TimeSpan PublishInterval { get;  }
+        public TimeSpan PublishInterval { get; }
         public string ServicePath { get; }
         public string RelativePath { get; }
         public EventHandler<WoopsaNotificationEventArgs> Handler { get; }
@@ -765,8 +762,8 @@ namespace Woopsa
             Subscription = subscription;
         }
 
-        public WoopsaClientNotification Notification { get;  }
-        public WoopsaClientSubscription Subscription { get;  }
+        public WoopsaClientNotification Notification { get; }
+        public WoopsaClientSubscription Subscription { get; }
     }
 
 }
